@@ -15,6 +15,8 @@ import scipy.io
 from datetime import datetime
 from dateutil.tz import tzlocal
 from pynwb import NWBFile
+from pynwb import TimeSeries
+
 
 # %% Define folders and other common parameters
 # upload information about all recorded session
@@ -56,7 +58,11 @@ spike_clus_good = spike_clusters[good_spikes_ind]
 spike_times_good = spike_times[good_spikes_ind]
 spike_stamps_good = spike_stamps[good_spikes_ind]
 
-del spike_clusters, spike_times, spike_stamps
+good_clus_info['area'] = good_clus_info['depth'] > np.max(good_clus_info['depth']) - 900
+good_clus_info['area'] = good_clus_info['area'].replace(True, 'V1')
+good_clus_info['area'] = good_clus_info['area'].replace(False, 'HPC')
+
+del spike_clusters, spike_times, spike_stamps, good_spikes_ind
 # %%
 # Now reading digitals from condInfo
 # This has to be checked carefully again, especially for few stimuli in the session and blocks
@@ -102,18 +108,32 @@ a.keys()
 
 # %% Trying to create NWB files
 
-start_time = datetime(2020, 2, 27, 14, 36, 7, tzinfo=tzlocal())
-nwbfile = NWBFile(session_description=Sess, identifier='NWB123', session_start_time=start_time)
-from pynwb import TimeSeries
+# Need to upload excel table and extract all relevant info from there
 
+start_time = datetime(2020, 2, 27, 14, 36, 7, tzinfo=tzlocal())
+nwbfile = NWBFile(session_description=Sess, identifier='NWB123', session_start_time=start_time, 
+                  experimenter = 'Marina Slashcheva', lab = 'Martin Vinck, ESI')
+
+# Did not add it for the moment
 test_ts = TimeSeries(name='test_timeseries', data=data, unit='m', timestamps=timestamps)
 
+# Adding units
+nwbfile.add_unit_column('location', 'the anatomical location of this unit') # to be added and CHECKED
+nwbfile.add_unit_column('depth', 'depth on the NPx probe')
+nwbfile.add_unit_column('channel', 'channel on the NPx probe')
+
+for un in [6]: #good_clus_info['id']:
+    print(un)
+    spike_times_tmp = spike_times_good[spike_clus_good == un]
+    
+    nwbfile.add_unit(id = un, spike_times = spike_times_tmp, location = )
+    del spike_times_tmp
 
 
 
-
-
-
+# Reading the NWB data
+io = NWBHDF5IO('ecephys_example.nwb', 'r')
+nwbfile = io.read()
 
 
 
