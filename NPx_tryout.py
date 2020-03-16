@@ -16,7 +16,7 @@ from datetime import datetime
 from dateutil.tz import tzlocal
 from pynwb import NWBFile
 from pynwb import TimeSeries
-
+from pynwb import NWBHDF5IO
 
 # %% Define folders and other common parameters
 # upload information about all recorded session
@@ -115,37 +115,56 @@ nwbfile = NWBFile(session_description=Sess, identifier='NWB123', session_start_t
                   experimenter = 'Marina Slashcheva', lab = 'Martin Vinck, ESI')
 
 # Did not add it for the moment
-test_ts = TimeSeries(name='test_timeseries', data=data, unit='m', timestamps=timestamps)
+# test_ts = TimeSeries(name='test_timeseries', data=data, unit='m', timestamps=timestamps)
 
-# Adding units
+# Add units
 nwbfile.add_unit_column('location', 'the anatomical location of this unit') # to be added and CHECKED
 nwbfile.add_unit_column('depth', 'depth on the NPx probe')
 nwbfile.add_unit_column('channel', 'channel on the NPx probe')
+nwbfile.add_unit_column('fr', 'average FR according to KS')
 
-for un in [6]: #good_clus_info['id']:
-    print(un)
+for un in good_clus_info['id']:
+    info_tmp = good_clus_info[good_clus_info['id'] == un]
     spike_times_tmp = spike_times_good[spike_clus_good == un]
     
-    nwbfile.add_unit(id = un, spike_times = spike_times_tmp, location = )
+    nwbfile.add_unit(id = un, spike_times = np.transpose(spike_times_tmp)[0], 
+                     location = info_tmp['area'].values[0], depth = info_tmp['depth'].values[0], 
+                     channel = info_tmp['ch'].values[0], fr = info_tmp['fr'].values[0])
     del spike_times_tmp
 
+# Add epochs 
+for ep in range(len(cond)):
+    if cond[ep].name == 'spontaneous_brightness':
+        nwbfile.add_epoch(cond[ep].time[0][0], cond[ep].time[0][1], cond[ep].name)
+    if cond[ep].name == 'natural_images':
+        nwbfile.add_epoch(cond[ep].time[0][0], cond[ep].time[-1][1], cond[ep].name)
+
+# Add trials
+nwbfile.add_trial_column(name='stimtype', description='the visual stimulus type during the trial')
+nwbfile.add_trial_column(name='img_id', description='image ID for Natural Images')
+
+for ep in range(len(cond)):
+    if cond[ep].name == 'spontaneous_brightness':
+        nwbfile.add_trial(start_time = cond[ep].time[0][0], stop_time = cond[ep].time[0][1], stimtype = cond[ep].name, img_id = 'gray')
+        
+    if cond[ep].name == 'natural_images':
+        for tr in range(len(cond[ep].time)):
+            nwbfile.add_trial(start_time = cond[ep].time[tr][0], stop_time = cond[ep].time[tr][1], 
+                              stimtype = cond[ep].name, img_id = cond[ep].img_order[tr])
+
+# Write NWB file
+os.chdir(RawDataDir)
+name_to_save = Sess + '.nwb'
+io = NWBHDF5IO(name_to_save, mode='w')
+io.write(nwbfile)
+io.close()
 
 
+
+# %%
 # Reading the NWB data
-io = NWBHDF5IO('ecephys_example.nwb', 'r')
-nwbfile = io.read()
-
-
-
-
-
-
-
-
-
-
-
-
+io = NWBHDF5IO(name_to_save, 'r')
+check = io.read()
 
 
 
