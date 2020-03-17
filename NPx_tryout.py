@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import os
 import os.path
-#import h5py 
+import h5py 
 import scipy.io
 
 from datetime import datetime
@@ -17,6 +17,8 @@ from dateutil.tz import tzlocal
 from pynwb import NWBFile
 from pynwb import TimeSeries
 from pynwb import NWBHDF5IO
+from pynwb import get_manager
+
 
 # %% Define folders and other common parameters
 # upload information about all recorded session
@@ -53,10 +55,10 @@ good_clus = cluster_group[cluster_group['group'] == 'good']
 good_clus_info = cluster_info[cluster_group['group'] == 'good']
 print("Found", len(good_clus), ' of good clusters') # has depth info
 
-good_spikes_ind = [x in good_clus['cluster_id'] for x in spike_clusters]
+good_spikes_ind = [x in good_clus['cluster_id'].values for x in spike_clusters]
 spike_clus_good = spike_clusters[good_spikes_ind]
 spike_times_good = spike_times[good_spikes_ind]
-spike_stamps_good = spike_stamps[good_spikes_ind]
+#spike_stamps_good = spike_stamps[good_spikes_ind]
 
 good_clus_info['area'] = good_clus_info['depth'] > np.max(good_clus_info['depth']) - 900
 good_clus_info['area'] = good_clus_info['area'].replace(True, 'V1')
@@ -140,31 +142,39 @@ for ep in range(len(cond)):
         nwbfile.add_epoch(cond[ep].time[0][0], cond[ep].time[-1][1], cond[ep].name)
 
 # Add trials
-nwbfile.add_trial_column(name='stimtype', description='the visual stimulus type during the trial')
+nwbfile.add_trial_column(name='stimset', description='the visual stimulus type during the trial')
 nwbfile.add_trial_column(name='img_id', description='image ID for Natural Images')
 
 for ep in range(len(cond)):
     if cond[ep].name == 'spontaneous_brightness':
-        nwbfile.add_trial(start_time = cond[ep].time[0][0], stop_time = cond[ep].time[0][1], stimtype = cond[ep].name, img_id = 'gray')
+        nwbfile.add_trial(start_time = cond[ep].time[0][0], stop_time = cond[ep].time[0][1], 
+                          stimset = (cond[ep].name).encode('utf8'), img_id = ('gray').encode('utf8'))
         
     if cond[ep].name == 'natural_images':
         for tr in range(len(cond[ep].time)):
             nwbfile.add_trial(start_time = cond[ep].time[tr][0], stop_time = cond[ep].time[tr][1], 
-                              stimtype = cond[ep].name, img_id = cond[ep].img_order[tr])
+                              stimset = (cond[ep].name).encode('utf8'), img_id = (str(cond[ep].img_order[tr])).encode('utf8'))
+
 
 # Write NWB file
 os.chdir(RawDataDir)
 name_to_save = Sess + '.nwb'
-io = NWBHDF5IO(name_to_save, mode='w')
+io = NWBHDF5IO(name_to_save, manager=get_manager(), mode='w')
 io.write(nwbfile)
 io.close()
 
+del nwbfile
 
 
 # %%
 # Reading the NWB data
-io = NWBHDF5IO(name_to_save, 'r')
-check = io.read()
+f = NWBHDF5IO(name_to_save, 'r')
+data_nwb = f.read()
+
+
+
+
+f.close()
 
 
 
