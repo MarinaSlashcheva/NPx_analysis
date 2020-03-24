@@ -8,40 +8,45 @@ Tryout of the NPx recording analysis
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib
 import os
 import os.path
 import h5py 
 import scipy.io
+import sys
 
 from datetime import datetime
 from dateutil.tz import tzlocal
 from pynwb import TimeSeries, NWBHDF5IO, NWBFile, get_manager 
 from pynwb.file import Subject
-import deepdish as dd
 
+
+sys.path.append(r'C:\Users\slashchevam\Desktop\NPx\NPx_analysis')
+from NPx_preprocessing_module import *
 
 # %% Define folders and other common parameters
-# upload information about all recorded session
 
+# Sess = 'Bl6_177_2020-02-29_17-12-05'
 Sess = 'Bl6_177_2020-02-27_14-36-07'
 sr = 30000
-system = 'windows' # or 'linux'
 
-if system == 'linux':
+
+
+if sys.platform == 'win32':
+    SaveDir = r'C:\Users\slashchevam\Desktop\NPx\Results'
+    RawDataDir = r'C:\Users\slashchevam\Desktop\NPx'
+    ExcelInfoPath = RawDataDir
+    
+    PathToUpload =  os.path.join(RawDataDir , Sess)
+
+#if system == 'linux':
+else:
     SaveDir = '/mnt/gs/departmentN4/Marina/NPx_python/'
     RawDataDir = '/mnt/gs/projects/OWVinckNatIm/NPx_recordings/'
     PAthToAnalyzed = '/experiment1/recording1/continuous/Neuropix-PXI-100.0/'
     MatlabOutput = '/mnt/gs/projects/OWVinckNatIm/NPx_processed/Lev0_condInfo/'
-
+    ExcelInfoPath = '/mnt/gs/departmentN4/Marina/NPx_python/rtmentn4/Marina/'
+    
     PathToUpload = RawDataDir + Sess + PAthToAnalyzed
-
-if system == 'windows':
-    SaveDir = r'C:\Users\slashchevam\Desktop\NPx_Bl6_177_2020-02-27_14-36-07\Results'
-    RawDataDir = r'C:\Users\slashchevam\Desktop\NPx_Bl6_177_2020-02-27_14-36-07\Bl6_177_2020-02-27_14-36-07'
-    MatlabOutput = RawDataDir
-
-    PathToUpload = RawDataDir
 # %% Upload all the necessary data
 
 spike_stamps = np.load(os.path.join(PathToUpload, "spike_times.npy"))
@@ -50,27 +55,27 @@ spike_clusters = np.load(os.path.join(PathToUpload, "spike_clusters.npy"))
 cluster_group = pd.read_csv(os.path.join(PathToUpload, "cluster_group.tsv"),  sep="\t")
 cluster_info = pd.read_csv(os.path.join(PathToUpload, "cluster_info.tsv"),  sep="\t")
 
-excel_info = pd.read_excel((RawDataDir + '\\Recordings_Marina_NPx.xlsx'), sheet_name=Sess)
+excel_info = pd.read_excel((ExcelInfoPath + '\\Recordings_Marina_NPx.xlsx'), sheet_name=Sess)
 
 # Select spikes from good clusters only
 # Have to add the depth of the clusters
 good_clus = cluster_group[cluster_group['group'] == 'good']
 good_clus_info = cluster_info[cluster_group['group'] == 'good']
-print("Found", len(good_clus), ' of good clusters') # has depth info
+print("Found", len(good_clus), ' good clusters') # has depth info
 
 good_spikes_ind = [x in good_clus['cluster_id'].values for x in spike_clusters]
 spike_clus_good = spike_clusters[good_spikes_ind]
 spike_times_good = spike_times[good_spikes_ind]
 spike_stamps_good = spike_stamps[good_spikes_ind]
 
-good_clus_info['area'] = good_clus_info['depth'] > np.max(good_clus_info['depth']) - 900
+good_clus_info['area'] = good_clus_info['depth'] > np.max(good_clus_info['depth']) - 1000
 good_clus_info['area'] = good_clus_info['area'].replace(True, 'V1')
 good_clus_info['area'] = good_clus_info['area'].replace(False, 'HPC')
 
 del spike_clusters, spike_times, spike_stamps, good_spikes_ind
 # %%
 # Now reading digitals from condInfo
-# This has to be checked carefully again, especially for few stimuli in the session and 
+# This has to be checked carefully again, especially for few stimuli in the session 
 
 # cond class contains the following:
 #   'spontaneous_brightness': dict_keys(['name', 'time', 'timestamps', 'trl_list', 'conf'])
@@ -111,9 +116,7 @@ a = cond[1].__dict__
 a.keys()
 
 
-# %% Trying to create NWB files
-
-# Need to upload excel table and extract all relevant info from there
+# %% Create NWB files
 
 start_time = datetime(2020, 2, 27, 14, 36, 7, tzinfo=tzlocal())
 nwb_subject = Subject(description = "Pretty nice girl",
@@ -138,7 +141,7 @@ nwbfile = NWBFile(session_description= "NPx recording of Natural images and spon
                   subject = nwb_subject
                   )
 
-# Did not add it for the moment
+# Did not add it for the moment, later add running as a timeseries and add to HDF5 as binary parameter
 # test_ts = TimeSeries(name='test_timeseries', data=data, unit='m', timestamps=timestamps)
 
 # Add units
@@ -180,7 +183,7 @@ for ep in range(len(cond)):
 
 
 # Write NWB file
-os.chdir(RawDataDir)
+os.chdir(SaveDir)
 name_to_save = Sess + '.nwb'
 io = NWBHDF5IO(name_to_save, manager=get_manager(), mode='w')
 io.write(nwbfile)
@@ -190,9 +193,14 @@ del nwbfile
 
 # %%
 
+# Reading the NWB data
+os.chdir(SaveDir)
+f = NWBHDF5IO((Sess + '.nwb'), 'r')
+data_nwb = f.read()
+
+# %% NOT RELEVANT ANY LONGER
 #def ms_raster():
     
-
 def make_trials(dat): # takes NWB file with trials and units
     #trl_list = len(dat.trials)*[None]
     #trl_list = [] 
@@ -210,26 +218,8 @@ def make_trials(dat): # takes NWB file with trials and units
         print('Trial ', tr)
     return trl_list
 
-
-# %%
-# Reading the NWB data
-os.chdir(RawDataDir)
-f = NWBHDF5IO((Sess + '.nwb'), 'r')
-data_nwb = f.read()
-
-
 trials_short = make_trials(data_nwb)
-
 trials = make_trials(data_nwb)
-
-
-with h5py.File("mytestfile.hdf5", "w") as file:
-    dset = file.create_dataset("mydataset", (100,), dtype='i')
-    
-z = h5py.File('mydataset.hdf5', 'a')
-grp = z.create_group("subgroup")
-
-
 
 dd.io.save('trl.h5', trials_short)
 
@@ -257,13 +247,6 @@ fig, (ax0) = plt.subplots(1,1, figsize=(16,6))
 ax0.eventplot(list_spikes_ord)
 ax0.set_xlim(data_nwb.trials[tr]['start_time'].values[0], data_nwb.trials[tr]['stop_time'].values[0])
 
-    
-
-
-
-            
-f.close()
-
 # %% Option for multiprocessing
 from multiprocessing import Pool
 import workers
@@ -282,6 +265,108 @@ if __name__ == '__main__':
     with Pool(os.cpu_count()) as p:
         print(p.map(workers.worker, [0,1,2,3,4,5]))
         
+
+print('ddd')
+
+# %% Create HDF5 file wth the following srtucture:
+#   /unit_id
+#   /unit_id/spike_times
+#   /unit_id/spike_stamps
+#   /unit_id/time_to_onset
+#   /unit_id/trial_num
+
+#with h5py.File("mytestfile.hdf5", "w") as file:
+#    #dset = file.create_dataset("mydataset", (100,), dtype='i')
+#    grp = file.create_group('unit1')
+    
+hdf5_name = Sess + '_trials.hdf5'
+file = h5py.File(hdf5_name, 'a')
+
+for un in range(len(data_nwb.units[:].index.values)):
+    grp = file.create_group(str(data_nwb.units[:].index.values[un]))
+    
+    #spike_stamps_tmp = spike_stamps_good[spike_clus_good == data_nwb.units[:].index.values[un]]
+    trial_num = np.empty((len(data_nwb.units[un]['spike_times'].values[0]))) * np.nan
+    trialonset_time = np.empty((len(data_nwb.units[un]['spike_times'].values[0]))) * np.nan
+    
+    for tr in data_nwb.trials[:].index.values:
+        tmp_vec = (data_nwb.units[un]['spike_times'].values[0] >= data_nwb.trials[tr]['start_time'].values[0]) & (data_nwb.units[un]['spike_times'].values[0] < data_nwb.trials[tr]['stop_time'].values[0])
+        trial_num[tmp_vec] = tr
+        
+        if data_nwb.trials[tr]['stimset'].values[0] == ('natural_images').encode('utf8'):
+            val = data_nwb.units[un]['spike_times'].values[0][tmp_vec]
+            start_t = data_nwb.trials[tr]['start_time'].values[0] + 0.200
+            trialonset_time[tmp_vec] = val - start_t
+
+        if data_nwb.trials[tr]['stimset'].values[0] == ('spontaneous_brightness').encode('utf8'):
+            val = data_nwb.units[un]['spike_times'].values[0][tmp_vec]
+            start_t = data_nwb.trials[tr]['start_time'].values[0]
+            trialonset_time[tmp_vec] = val - start_t
+        
+    grp.create_dataset('spike_times', data =  data_nwb.units[un]['spike_times'].values[0])
+    #grp.create_dataset('spike_stamps', data = spike_stamps_tmp)
+    grp.create_dataset('spike_stamps', data = (data_nwb.units[un]['spike_times'].values[0]*30000).astype(int))
+    grp.create_dataset('trial_num', data = trial_num)
+    grp.create_dataset('time_to_onset', data = trialonset_time)
+    
+    print('Processed ', un+1, ' units')
+    
+#file.visit(print)
+file.close()
+
+# Read the file
+
+
+# %%
+
+# Choose the session
+Sess = 'Bl6_177_2020-02-29_17-12-05'
+Sess = 'Bl6_177_2020-02-27_14-36-07'
+
+if sys.platform == 'win32':
+    SaveDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
+
+if sys.platform != 'win32':
+    SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx_python/', Sess)
+    
+if not os.path.exists(SaveDir):
+    os.makedirs(SaveDir)
+    
+os.chdir(SaveDir)
+
+# Create new NWB and HDF5 files, if they do not exist yet
+# Creating hdf5 takes some time!!! 
+# start_time = datetime(2020, 2, 27, 14, 36, 7, tzinfo=tzlocal())
+# create_nwb_file(Sess, start_time)
+# create_hdf5_file(Sess)
+
+# Upload 
+f = NWBHDF5IO((Sess + '.nwb'), 'r')
+data_nwb = f.read()
+data_hdf = h5py.File((Sess + '_trials.hdf5'), 'r')
+
+
+# Add proper path for that! 
+psth_per_unit_NatIm(Sess, 100)
+
+
+
+data_hdf.close()
+f.close()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
