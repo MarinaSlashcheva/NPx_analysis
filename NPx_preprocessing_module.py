@@ -254,15 +254,17 @@ def FR_barplot(nwbfile):
 
 
 
+
 def psth_per_unit_NatIm(Sess, bins):
 # Creating PSTH (simple histogram)
+    ResDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
     if sys.platform == 'win32':
         SaveDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
 
     if sys.platform != 'win32':
         SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx_python/', Sess)
 
-    os.chdir(SaveDir)
+    os.chdir(ResDir)
 
     f = NWBHDF5IO((Sess + '.nwb'), 'r')
     data_nwb = f.read()
@@ -292,9 +294,100 @@ def psth_per_unit_NatIm(Sess, bins):
         if not os.path.exists(folder):
             os.makedirs(folder)
     
-        savetitle = os.path.join(SaveDir, Sess, folder, (key+'.png'))
+        savetitle = os.path.join(SaveDir, folder, (key+'.png'))
         plt.savefig(savetitle)
         plt.close('all')
+        
+    data_hdf.close()
+    f.close()
+    
+    
+    
+    
+    
+    
+def raster_spontaneous(Sess, dur): 
+    
+    """
+    Function to plot raster plots for spontaneous activity
+    dur - the chunk of the data (in sec) to plot
+    
+    """
+    
+    if sys.platform == 'win32':
+        SaveDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
+
+    if sys.platform != 'win32':
+        SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx_python/', Sess)
+
+    os.chdir(SaveDir)
+
+    f = NWBHDF5IO((Sess + '.nwb'), 'r')
+    data_nwb = f.read()
+    data_hdf = h5py.File((Sess + '_trials.hdf5'), 'r')
+    
+    spont_ind_trials = data_nwb.trials[:].index.values[data_nwb.trials[:]['stimset'].values == ('spontaneous_brightness').encode('utf8')]
+    for ind in spont_ind_trials:
+        print(ind)
+        
+        start = data_nwb.trials[ind]['start_time'].values[0]
+        stop = data_nwb.trials[ind]['stop_time'].values[0]
+        total_dur = stop-start
+        
+        spont_dic = {}
+        for key in data_hdf.keys():
+            spont_dic[key] = data_hdf[key]['spike_times'][:][data_hdf[key]['trial_num'][:] == ind]
+        spont_table = list(spont_dic.values())
+        
+        sorting_ind = ((data_nwb.units[:]['depth']).sort_values()).index.values
+        dict_order = np.transpose([int(i) for i in list(spont_dic.keys())])
+        
+        # deepest neurons are on the top 
+        spont_table_ordered = []
+        for v in sorting_ind:
+            spont_table_ordered.append(spont_table[np.where(dict_order == v)[0][0]])
+            
+        del spont_dic, spont_table
+            
+        init = 0
+        step = dur #seconds
+        image_num = 1
+    
+        while init <= total_dur:
+    
+            fig = plt.figure()  # an empty figure with no axes
+            fig, ax = plt.subplots(1,1, figsize=(18,8)) 
+
+            # raster plot
+            temp_raster = []
+            for val in spont_table_ordered:
+                temp_raster.append(val[(val >= start+init) & (val <= start+init+step)])
+    
+            ax.eventplot(temp_raster)
+            ax.set_xlim(start+init, start+init+step)
+            ax.set_title('Raster plot')
+            ax.set_ylabel('Neuron')
+            ax.set_xlabel('Time, sec')
+    
+            #ax4 = ax3.twinx()
+            #color = 'tab:red'
+            #ax4.set_ylabel('iFR', color=color)  # we already handled the x-label with ax1
+            #ax4.plot(np.arange(start, stop, bin_size/1000), np.mean(list(spont_visp_iFR.values()), 
+            #         axis=0)[0:int(dur*1000/bin_size)], color=color)
+            #ax4.tick_params(axis='y', labelcolor=color)
+            #fig.tight_layout() 
+            
+            folder = 'rasters_spontaneous'
+            if not os.path.exists(folder):
+                os.makedirs(folder)
+        
+            plot_title = os.path.join(SaveDir, folder, (str(image_num)+'.png'))
+            plt.savefig(plot_title)
+            plt.close('all')
+            
+            init = init + step
+            print(image_num)
+            image_num = image_num + 1
         
     data_hdf.close()
     f.close()
