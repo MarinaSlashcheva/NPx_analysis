@@ -5,6 +5,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import os
 import os.path
 import h5py 
@@ -24,7 +25,7 @@ from pynwb.file import Subject
 
 def create_nwb_file(Sess, start_time):
     
-    sr = 30000
+    sr = 30000 #30kHz
     if sys.platform == 'win32':
         SaveDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
         RawDataDir = r'C:\Users\slashchevam\Desktop\NPx'
@@ -32,7 +33,7 @@ def create_nwb_file(Sess, start_time):
           
         PathToUpload =  os.path.join(RawDataDir , Sess)
     
-    if sys.platform != 'win32':
+    if sys.platform == 'linux':
         SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx_python/', Sess)
         RawDataDir = '/mnt/gs/projects/OWVinckNatIm/NPx_recordings/'
         PAthToAnalyzed = '/experiment1/recording1/continuous/Neuropix-PXI-100.0/'
@@ -48,8 +49,10 @@ def create_nwb_file(Sess, start_time):
     cluster_group = pd.read_csv(os.path.join(PathToUpload, "cluster_group.tsv"),  sep="\t")
     cluster_info = pd.read_csv(os.path.join(PathToUpload, "cluster_info.tsv"),  sep="\t")
     
-    excel_info = pd.read_excel((ExcelInfoPath + '\\Recordings_Marina_NPx.xlsx'), sheet_name=Sess)
-    
+    #excel_info = pd.read_excel((ExcelInfoPath + '\\Recordings_Marina_NPx.xlsx'), sheet_name=Sess)
+    excel_info = pd.read_excel(os.path.join(ExcelInfoPath + '\\Recordings_Marina_NPx.xlsx'), sheet_name=Sess)
+
+
     # Select spikes from good clusters only
     # Have to add the depth of the clusters
     good_clus = cluster_group[cluster_group['group'] == 'good']
@@ -78,7 +81,7 @@ def create_nwb_file(Sess, start_time):
     class condInfo:
         pass
     
-    if sys.platform != 'win32':
+    if sys.platform == 'linux':
         mat = scipy.io.loadmat(os.path.join((MatlabOutput + Sess), 'condInfo_01.mat'))
     if sys.platform == 'win32':
         mat = scipy.io.loadmat(os.path.join(PathToUpload, 'condInfo_01.mat'))
@@ -88,22 +91,23 @@ def create_nwb_file(Sess, start_time):
     SC_stim_labels_present = SC_stim_labels[SC_stim_present]
     
     cond = [condInfo() for i in range(len(SC_stim_labels_present))]
-    
+
     for stim in range(len(SC_stim_labels_present)):
         cond[stim].name = SC_stim_labels_present[stim][0]
+        cond[stim].stiminfo = mat['StimClass'][0][0][3][0, SC_stim_present[stim]][0][0][0][1] # image indices are here
         cond[stim].time = mat['StimClass'][0][0][3][0, SC_stim_present[stim]][0][0][0][2]
         cond[stim].timestamps =  mat['StimClass'][0][0][3][0, SC_stim_present[stim]][0][0][0][3]
         cond[stim].trl_list = mat['StimClass'][0][0][3][0, SC_stim_present[stim]][1]
         
-        cond[stim].conf =  mat['StimClass'][0][0][2][0, SC_stim_present[stim]]
+        cond[stim].conf =  mat['StimClass'][0][0][2][0, SC_stim_present[stim]]# config is very likely wrong and useless
         
         if SC_stim_labels_present[stim][0] == 'natural_images':
             img_order = []
-            for i in range(len(cond[stim].conf[0][0][0][8][0])):
-                img_order.append(cond[stim].conf[0][0][0][8][0][i][1][0][0])
+            for i in range(len(cond[stim].stiminfo)):
+                img_order.append(int(cond[stim].stiminfo[i][2]))
             cond[stim].img_order = img_order
             cond[stim].img_name = cond[stim].conf[0][0][0][10][0] # currently not used but might be needed later
-    
+
     
     
     # Now create NWB file
@@ -157,18 +161,24 @@ def create_nwb_file(Sess, start_time):
     
     # Add trials
     # Images names can be also added here
+    nwbfile.add_trial_column(name='start', description='start time relative to the stimulus onset')
     nwbfile.add_trial_column(name='stimset', description='the visual stimulus type during the trial')
     nwbfile.add_trial_column(name='img_id', description='image ID for Natural Images')
     
     for ep in range(len(cond)):
         if cond[ep].name == 'spontaneous_brightness':
-            nwbfile.add_trial(start_time = cond[ep].time[0][0], stop_time = cond[ep].time[0][1], 
-                              stimset = (cond[ep].name).encode('utf8'), img_id = ('gray').encode('utf8'))
+            for tr in range(len(cond[ep].time)):
+                nwbfile.add_trial(start_time = cond[ep].time[tr][0], stop_time = cond[ep].time[tr][1],
+                                  start = cond[ep].time[tr][2],
+                                  stimset = (cond[ep].name).encode('utf8'), 
+                                  img_id = ('gray').encode('utf8'))
             
         if cond[ep].name == 'natural_images':
             for tr in range(len(cond[ep].time)):
-                nwbfile.add_trial(start_time = cond[ep].time[tr][0], stop_time = cond[ep].time[tr][1], 
-                                  stimset = (cond[ep].name).encode('utf8'), img_id = (str(cond[ep].img_order[tr])).encode('utf8'))
+                nwbfile.add_trial(start_time = cond[ep].time[tr][0], stop_time = cond[ep].time[tr][1],
+                                  start = cond[ep].time[tr][2],
+                                  stimset = (cond[ep].name).encode('utf8'), 
+                                  img_id = (str(cond[ep].img_order[tr])).encode('utf8'))
     
     
     # Write NWB file
@@ -193,7 +203,7 @@ def create_hdf5_file(Sess):
     if sys.platform == 'win32':
         SaveDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
 
-    if sys.platform != 'win32':
+    if sys.platform == 'linux':
         SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx_python/', Sess)
 
     os.chdir(SaveDir)
@@ -261,7 +271,7 @@ def psth_per_unit_NatIm(Sess, bins):
     if sys.platform == 'win32':
         SaveDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
 
-    if sys.platform != 'win32':
+    if sys.platform == 'linux':
         SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx_python/', Sess)
 
     os.chdir(ResDir)
@@ -271,26 +281,34 @@ def psth_per_unit_NatIm(Sess, bins):
     data_hdf = h5py.File((Sess + '_trials.hdf5'), 'r')
 
     nat_im_trials = data_nwb.trials[:].index.values[data_nwb.trials[:]['stimset'].values == ('natural_images').encode('utf8')]
+    nat_im = nat_im_trials[(data_nwb.trials[1:]['img_id'].values).astype(int) <= 900]
+    gray_im = nat_im_trials[(data_nwb.trials[1:]['img_id'].values).astype(int) > 900]
     
     for key in data_hdf.keys():
         print('psth of unit', key)
         
-        spikes_for_psth = [x in nat_im_trials for x in data_hdf[key]['trial_num'][:]]
-        spike_t_psth = data_hdf[key]['time_to_onset'][:][spikes_for_psth]
+        spikes_for_psth_nat_im = [x in nat_im for x in data_hdf[key]['trial_num'][:]]
+        spike_t_psth_nat_im = data_hdf[key]['time_to_onset'][:][spikes_for_psth_nat_im]
         
-        num_bins = bins
+        spikes_for_psth_gray_im = [x in gray_im for x in data_hdf[key]['trial_num'][:]]
+        spike_t_psth_gray_im = data_hdf[key]['time_to_onset'][:][spikes_for_psth_gray_im]
+
         fig, ax = plt.subplots()
-        n, bins, patches = ax.hist(spike_t_psth, num_bins, density=1)
+        _, bins, _ = ax.hist(spike_t_psth_nat_im, bins=bins, range=[-0.2, 0.8], density=True,alpha=0.7, color = 'green')
+        _ = ax.hist(spike_t_psth_gray_im, bins=bins, alpha=0.5, density=True, color='grey')
+
+#        fig, ax = plt.subplots()
+#        n, bins, patches = ax.hist(spike_t_psth, num_bins, density=1)
         
         ax.set_xlabel('Time, s')
         ax.set_ylabel('Spiking')
-        ax.set_xlim((-0.2, 1))
+        ax.set_xlim((-0.2, 0.8))
         title = 'Unit ' + key + ' from ' + data_nwb.units[:][data_nwb.units[:].index == int(key)]['location'].values[0]
         ax.set_title(title)
         # Tweak spacing to prevent clipping of ylabel
         fig.tight_layout()
     
-        folder = 'psth_per_unit'
+        folder = 'psth_per_unit_v2'
         if not os.path.exists(folder):
             os.makedirs(folder)
     
@@ -300,8 +318,6 @@ def psth_per_unit_NatIm(Sess, bins):
         
     data_hdf.close()
     f.close()
-    
-    
     
     
     
@@ -317,7 +333,7 @@ def raster_spontaneous(Sess, dur):
     if sys.platform == 'win32':
         SaveDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
 
-    if sys.platform != 'win32':
+    if sys.platform == 'linux':
         SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx_python/', Sess)
 
     os.chdir(SaveDir)
@@ -339,7 +355,9 @@ def raster_spontaneous(Sess, dur):
             spont_dic[key] = data_hdf[key]['spike_times'][:][data_hdf[key]['trial_num'][:] == ind]
         spont_table = list(spont_dic.values())
         
-        sorting_ind = ((data_nwb.units[:]['depth']).sort_values()).index.values
+        sorted_values = data_nwb.units[:][['depth', 'location']].sort_values(by='depth')
+        sorting_ind = sorted_values.index.values
+        sorted_areas = sorted_values['location'].values # for coloring the plot
         dict_order = np.transpose([int(i) for i in list(spont_dic.keys())])
         
         # deepest neurons are on the top 
@@ -352,6 +370,14 @@ def raster_spontaneous(Sess, dur):
         init = 0
         step = dur #seconds
         image_num = 1
+        
+        # Separate color for each brain area
+        areas = set(sorted_areas)
+        col = ['C{}'.format(i) for i in range(len(areas))]
+        col_list = sorted_areas.copy()
+        for c in range(len(col)):
+            col_list[sorted_areas == list(areas)[c]] = col[c]
+            
     
         while init <= total_dur:
     
@@ -363,7 +389,9 @@ def raster_spontaneous(Sess, dur):
             for val in spont_table_ordered:
                 temp_raster.append(val[(val >= start+init) & (val <= start+init+step)])
     
-            ax.eventplot(temp_raster)
+            ax.eventplot(temp_raster, colors = col_list)
+            lines = [Line2D([0], [0], color=c, linewidth=3, linestyle='-') for c in col]
+            ax.legend(lines, list(areas))
             ax.set_xlim(start+init, start+init+step)
             ax.set_title('Raster plot')
             ax.set_ylabel('Neuron')
