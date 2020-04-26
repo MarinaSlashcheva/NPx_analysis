@@ -27,6 +27,8 @@ from NPx_preprocessing_module import *
 # Choose the session
 Sess = 'Bl6_177_2020-02-29_17-12-05'
 Sess = 'Bl6_177_2020-02-27_14-36-07'
+Sess = 'Bl6_177_2020-03-01_14-49-02'
+
 
 pupil_folder = 'C:\\Users\\slashchevam\\Desktop\\NPx\\videos'
 os.chdir(pupil_folder)
@@ -49,8 +51,8 @@ os.chdir(SaveDir)
 # Create new NWB and HDF5 files, if they do not exist yet
 # Creating hdf5 takes some time!!! 
 
-#start_time = datetime(2020, 2, 27, 14, 36, 7, tzinfo=tzlocal())
-#create_nwb_file(Sess, start_time)
+# start_time = datetime(2020, 2, 27, 14, 36, 7, tzinfo=tzlocal())
+# create_nwb_file(Sess, start_time)
 # create_hdf5_file(Sess)
 
 # Upload NWB and HDF5 files
@@ -58,13 +60,6 @@ f = NWBHDF5IO((Sess + '.nwb'), 'r')
 data_nwb = f.read()
 
 data_hdf = h5py.File((Sess + '_trials.hdf5'), 'r')
-
-pupil_folder = 'C:\\Users\\slashchevam\\Desktop\\NPx\\videos'
-os.chdir(pupil_folder)
-
-pupil_table = pd.read_csv(os.path.join(pupil_folder, "Bl6_177_2020-02-27_14-36-07_pupil.csv"),   
-                          index_col=False)
-
 
 
 # Close files
@@ -75,7 +70,7 @@ pupil_table = pd.read_csv(os.path.join(pupil_folder, "Bl6_177_2020-02-27_14-36-0
 # Add proper path for that! 
 psth_per_unit_NatIm(Sess, 50) # session title and bin number
 
-raster_spontaneous(Sess, 10) # session title and duration of one plot in sec
+raster_spontaneous(Sess, 10, pupil_table) # session title and duration of one plot in sec
 
 
 # %% Thie is the code for plotting rasters per unit, only 917 trials per unit overlayed with phst of the same data [1]
@@ -424,7 +419,9 @@ plt.savefig('scatter')
 
 
 
+# %% 
 
+spikes = normalize_spike_trains(Sess, 0.05)
 
 
 

@@ -6,6 +6,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+from matplotlib import gridspec
+import matplotlib.patches as mpatches
+
 import os
 import os.path
 import h5py 
@@ -95,20 +98,30 @@ def create_nwb_file(Sess, start_time):
     for stim in range(len(SC_stim_labels_present)):
         cond[stim].name = SC_stim_labels_present[stim][0]
         cond[stim].stiminfo = mat['StimClass'][0][0][3][0, SC_stim_present[stim]][0][0][0][1] # image indices are here
-        cond[stim].time = mat['StimClass'][0][0][3][0, SC_stim_present[stim]][0][0][0][2]
-        cond[stim].timestamps =  mat['StimClass'][0][0][3][0, SC_stim_present[stim]][0][0][0][3]
+        
+        # sorting out digitals for spontaneous activity
+        # Need this loop in case there are few periods of spont, recorded like separate blocks
+        if SC_stim_labels_present[stim][0] == 'spontaneous_brightness':
+            cond[stim].time = []
+            cond[stim].timestamps = []
+            for block in range(len(mat['StimClass'][0][0][3][0, SC_stim_present[stim]][0][0])):
+                print(block)
+                cond[stim].time.append(mat['StimClass'][0][0][3][0, SC_stim_present[stim]][0][0][block][2])
+                cond[stim].timestamps.append(mat['StimClass'][0][0][3][0, SC_stim_present[stim]][0][0][block][3])
+        
         cond[stim].trl_list = mat['StimClass'][0][0][3][0, SC_stim_present[stim]][1]
-        
         cond[stim].conf =  mat['StimClass'][0][0][2][0, SC_stim_present[stim]]# config is very likely wrong and useless
-        
+    
+        # sorting out digitals for natural images
         if SC_stim_labels_present[stim][0] == 'natural_images':
+            cond[stim].time = mat['StimClass'][0][0][3][0, SC_stim_present[stim]][0][0][0][2]
+            cond[stim].timestamps =  mat['StimClass'][0][0][3][0, SC_stim_present[stim]][0][0][0][3]
             img_order = []
             for i in range(len(cond[stim].stiminfo)):
                 img_order.append(int(cond[stim].stiminfo[i][2]))
             cond[stim].img_order = img_order
             cond[stim].img_name = cond[stim].conf[0][0][0][10][0] # currently not used but might be needed later
 
-    
     
     # Now create NWB file
     start_time = start_time # datetime(2020, 2, 27, 14, 36, 7, tzinfo=tzlocal())
@@ -155,7 +168,12 @@ def create_nwb_file(Sess, start_time):
     # Add epochs 
     for ep in range(len(cond)):
         if cond[ep].name == 'spontaneous_brightness':
-            nwbfile.add_epoch(cond[ep].time[0][0], cond[ep].time[0][1], cond[ep].name)
+            #if len(cond[ep].time) > 1:
+            for bl in range(len(cond[ep].time)):
+                nwbfile.add_epoch(cond[ep].time[bl][0][0], cond[ep].time[bl][0][1], cond[ep].name)
+            #else:    
+            #    nwbfile.add_epoch(cond[ep].time[0][0], cond[ep].time[0][1], cond[ep].name)
+        
         if cond[ep].name == 'natural_images':
             nwbfile.add_epoch(cond[ep].time[0][0], cond[ep].time[-1][1], cond[ep].name)
     
@@ -167,11 +185,18 @@ def create_nwb_file(Sess, start_time):
     
     for ep in range(len(cond)):
         if cond[ep].name == 'spontaneous_brightness':
+            #if len(cond[ep].time) > 1:
             for tr in range(len(cond[ep].time)):
-                nwbfile.add_trial(start_time = cond[ep].time[tr][0], stop_time = cond[ep].time[tr][1],
-                                  start = cond[ep].time[tr][2],
+                nwbfile.add_trial(start_time = cond[ep].time[tr][0][0], stop_time = cond[ep].time[tr][0][1],
+                                  start = cond[ep].time[tr][0][2],
                                   stimset = (cond[ep].name).encode('utf8'), 
                                   img_id = ('gray').encode('utf8'))
+                    
+#            else:
+#                nwbfile.add_trial(start_time = cond[ep].time[0][0], stop_time = cond[ep].time[0][1],
+#                                  start = cond[ep].time[0][2],
+#                                  stimset = (cond[ep].name).encode('utf8'), 
+#                                  img_id = ('gray').encode('utf8'))                   
             
         if cond[ep].name == 'natural_images':
             for tr in range(len(cond[ep].time)):
@@ -287,24 +312,37 @@ def psth_per_unit_NatIm(Sess, bins):
     for key in data_hdf.keys():
         print('psth of unit', key)
         
+        # spikes for 
         spikes_for_psth_nat_im = [x in nat_im for x in data_hdf[key]['trial_num'][:]]
         spike_t_psth_nat_im = data_hdf[key]['time_to_onset'][:][spikes_for_psth_nat_im]
         
         spikes_for_psth_gray_im = [x in gray_im for x in data_hdf[key]['trial_num'][:]]
         spike_t_psth_gray_im = data_hdf[key]['time_to_onset'][:][spikes_for_psth_gray_im]
+        
+        psth_tmp = []
+        for i in range(100):
+            vec = [data_hdf[key]['trial_num'][:] == nat_im[i]]
+            psth_tmp.append(data_hdf[key]['time_to_onset'][:][vec])
 
-        fig, ax = plt.subplots()
-        _, bins, _ = ax.hist(spike_t_psth_nat_im, bins=bins, range=[-0.2, 0.8], density=True,alpha=0.7, color = 'green')
-        _ = ax.hist(spike_t_psth_gray_im, bins=bins, alpha=0.5, density=True, color='grey')
+        fig, [ax0, ax1] = plt.subplots(2,1, figsize = (6,6), sharex=True, )
+        _, bins, _ = ax0.hist(spike_t_psth_nat_im, bins=bins, range=[-0.2, 0.8], density=True,alpha=0.7, color = 'green')
+        _ = ax0.hist(spike_t_psth_gray_im, bins=bins, alpha=0.5, density=True, color='grey')
 
 #        fig, ax = plt.subplots()
 #        n, bins, patches = ax.hist(spike_t_psth, num_bins, density=1)
         
-        ax.set_xlabel('Time, s')
-        ax.set_ylabel('Spiking')
-        ax.set_xlim((-0.2, 0.8))
-        title = 'Unit ' + key + ' from ' + data_nwb.units[:][data_nwb.units[:].index == int(key)]['location'].values[0]
-        ax.set_title(title)
+        ax0.set_ylabel('Spike count')
+        ax0.set_xlim((-0.2, 0.8))
+        title = 'Unit ' + key + ', ' + data_nwb.units[:][data_nwb.units[:].index == int(key)]['location'].values[0] + ', FR (hz): ' + str(data_nwb.units[:].loc[int(key)]['fr'])
+        ax0.set_title(title)
+        green_patch = mpatches.Patch(color='green', label='Nat images')
+        gray_patch = mpatches.Patch(color='gray', label='Contol (gray)', alpha=0.7)
+        ax0.legend(handles=[green_patch, gray_patch])
+        
+        ax1.eventplot(psth_tmp, colors='black', linewidths =1.5)
+        ax1.set_xlabel('Time, s')
+        ax1.set_ylabel('Trials (first 100)')
+        ax1.axvline(x=0, ymin=0, ymax=100, alpha=0.7, c='black', ls='--', lw='0.5')
         # Tweak spacing to prevent clipping of ylabel
         fig.tight_layout()
     
@@ -322,7 +360,7 @@ def psth_per_unit_NatIm(Sess, bins):
     
     
     
-def raster_spontaneous(Sess, dur): 
+def raster_spontaneous(Sess, dur, pupil): 
     
     """
     Function to plot raster plots for spontaneous activity
@@ -343,6 +381,8 @@ def raster_spontaneous(Sess, dur):
     data_hdf = h5py.File((Sess + '_trials.hdf5'), 'r')
     
     spont_ind_trials = data_nwb.trials[:].index.values[data_nwb.trials[:]['stimset'].values == ('spontaneous_brightness').encode('utf8')]
+    pupil_area_rescaled = np.interp(pupil['pupil_area'], (pupil['pupil_area'].min(), pupil['pupil_area'].max()), (1, 100))
+    
     for ind in spont_ind_trials:
         print(ind)
         
@@ -380,30 +420,33 @@ def raster_spontaneous(Sess, dur):
             
     
         while init <= total_dur:
-    
-            fig = plt.figure()  # an empty figure with no axes
-            fig, ax = plt.subplots(1,1, figsize=(18,8)) 
-
+            
+            fig = plt.figure(figsize=(18,10))
+            gs = gridspec.GridSpec(2,1, height_ratios=[2, 6], hspace = 0) 
+            
+            temp_pupil = pupil_area_rescaled[(pupil['time'] >= start+init) & (pupil['time'] <= start+init+step)]
+            temp_time = pupil['time'][(pupil['time'] >= start+init) & (pupil['time'] <= start+init+step)]
+            
+            ax0 = plt.subplot(gs[0])
+            ax0.plot(temp_time, temp_pupil, color = 'green', alpha = 0.75)
+            ax0.set_xlim(start+init, start+init+step)
+            ax0.set_ylabel('Pupil area, pxls')
+            ax0.set_ylim(0, 75)
+            
             # raster plot
             temp_raster = []
             for val in spont_table_ordered:
                 temp_raster.append(val[(val >= start+init) & (val <= start+init+step)])
-    
-            ax.eventplot(temp_raster, colors = col_list)
+            
+            ax1 = plt.subplot(gs[1])
+            ax1.eventplot(temp_raster, colors = col_list)
             lines = [Line2D([0], [0], color=c, linewidth=3, linestyle='-') for c in col]
-            ax.legend(lines, list(areas))
-            ax.set_xlim(start+init, start+init+step)
-            ax.set_title('Raster plot')
-            ax.set_ylabel('Neuron')
-            ax.set_xlabel('Time, sec')
-    
-            #ax4 = ax3.twinx()
-            #color = 'tab:red'
-            #ax4.set_ylabel('iFR', color=color)  # we already handled the x-label with ax1
-            #ax4.plot(np.arange(start, stop, bin_size/1000), np.mean(list(spont_visp_iFR.values()), 
-            #         axis=0)[0:int(dur*1000/bin_size)], color=color)
-            #ax4.tick_params(axis='y', labelcolor=color)
-            #fig.tight_layout() 
+            ax1.legend(lines, list(areas))
+            ax1.set_xlim(start+init, start+init+step)
+            ax1.set_ylabel('Neuron')
+            ax1.set_xlabel('Time, sec')
+
+            ax0.label_outer()
             
             folder = 'rasters_spontaneous'
             if not os.path.exists(folder):
@@ -419,3 +462,63 @@ def raster_spontaneous(Sess, dur):
         
     data_hdf.close()
     f.close()
+    
+    
+    
+
+def normalize_spike_trains(Sess, binsize):
+    # binsize in sec: 0.05 s
+    
+    if sys.platform == 'win32':
+        SaveDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
+
+    if sys.platform == 'linux':
+        SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx_python/', Sess)
+
+    os.chdir(SaveDir)
+
+    f = NWBHDF5IO((Sess + '.nwb'), 'r')
+    data_nwb = f.read()
+    data_hdf = h5py.File((Sess + '_trials.hdf5'), 'r')
+    
+    spont_ind_trials = data_nwb.trials[:].index.values[data_nwb.trials[:]['stimset'].values == ('spontaneous_brightness').encode('utf8')]        
+    units_v1_sorted = data_nwb.units[:].sort_values(by = 'depth')[data_nwb.units[:]['location'] == 'V1']    
+    
+    print("Found ", len(units_v1_sorted), 'units in V1')
+    
+    data_epochs = []
+    
+    for ind in spont_ind_trials:
+        # Calculate the duration of spont epoch to get the number of bins for spike counts
+        dur = data_nwb.trials[:].loc[ind]['stop_time'] - data_nwb.trials[:].loc[ind]['start_time']
+        bins_n = int(dur/binsize)
+        
+        spike_traces_norm = np.zeros((len(units_v1_sorted), bins_n))
+        index = 0
+        for i in units_v1_sorted.index.values: #data_hdf.keys():
+            un = str(i)
+            spikes_tmp = data_hdf[un]['time_to_onset'][data_hdf[un]['trial_num'][:] == ind]
+
+            counts, bin_edges = np.histogram(spikes_tmp, bins=bins_n)
+            
+            # z-score spike train
+            spike_traces_norm[index, :] = (counts - np.mean(counts))/ np.std(counts)
+            index = index+1
+            
+        data_epochs.append(spike_traces_norm)    
+        print('Finished spontaneous epoch', ind)
+    
+    return data_epochs
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    

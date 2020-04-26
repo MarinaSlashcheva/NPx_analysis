@@ -38,13 +38,12 @@ if sys.platform == 'win32':
     
     PathToUpload =  os.path.join(RawDataDir , Sess)
 
-#if system == 'linux':
-else:
+if system == 'linux':
     SaveDir = '/mnt/gs/departmentN4/Marina/NPx_python/'
     RawDataDir = '/mnt/gs/projects/OWVinckNatIm/NPx_recordings/'
     PAthToAnalyzed = '/experiment1/recording1/continuous/Neuropix-PXI-100.0/'
     MatlabOutput = '/mnt/gs/projects/OWVinckNatIm/NPx_processed/Lev0_condInfo/'
-    ExcelInfoPath = '/mnt/gs/departmentN4/Marina/NPx_python/rtmentn4/Marina/'
+    ExcelInfoPath = '/mnt/gs/departmentN4/Marina/'
     
     PathToUpload = RawDataDir + Sess + PAthToAnalyzed
 # %% Upload all the necessary data
@@ -84,9 +83,9 @@ del spike_clusters, spike_times, spike_stamps, good_spikes_ind
 class condInfo:
     pass
 
-if system == 'linux':
+if sys.platform != 'win32':
     mat = scipy.io.loadmat(os.path.join((MatlabOutput + Sess), 'condInfo_01.mat'))
-else:
+if sys.platform == 'win32':
     mat = scipy.io.loadmat(os.path.join(PathToUpload, 'condInfo_01.mat'))
 
 SC_stim_labels = mat['StimClass'][0][0][0][0]
@@ -96,17 +95,20 @@ SC_stim_labels_present = SC_stim_labels[SC_stim_present]
 cond = [condInfo() for i in range(len(SC_stim_labels_present))]
 
 for stim in range(len(SC_stim_labels_present)):
+    print(stim)
     cond[stim].name = SC_stim_labels_present[stim][0]
     cond[stim].time = mat['StimClass'][0][0][3][0, SC_stim_present[stim]][0][0][0][2]
+    cond[stim].stiminfo = mat['StimClass'][0][0][3][0, SC_stim_present[stim]][0][0][0][1]
+    
     cond[stim].timestamps =  mat['StimClass'][0][0][3][0, SC_stim_present[stim]][0][0][0][3]
     cond[stim].trl_list = mat['StimClass'][0][0][3][0, SC_stim_present[stim]][1]
     
-    cond[stim].conf =  mat['StimClass'][0][0][2][0, SC_stim_present[stim]]
+    cond[stim].conf =  mat['StimClass'][0][0][2][0, SC_stim_present[stim]]# config is bery likely wrong and useless
     
     if SC_stim_labels_present[stim][0] == 'natural_images':
         img_order = []
-        for i in range(len(cond[stim].conf[0][0][0][8][0])):
-            img_order.append(cond[stim].conf[0][0][0][8][0][i][1][0][0])
+        for i in range(len(cond[stim].stiminfo)):
+            img_order.append(int(cond[stim].stiminfo[i][2]))
         cond[stim].img_order = img_order
         cond[stim].img_name = cond[stim].conf[0][0][0][10][0] # currently not used but might be needed later
 
