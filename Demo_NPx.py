@@ -8,8 +8,10 @@ import os
 import os.path
 import h5py 
 import scipy.io
+import seaborn as sb
 import sys
 
+from scipy import stats as st
 from datetime import datetime
 from dateutil.tz import tzlocal
 from pynwb import TimeSeries, NWBHDF5IO, NWBFile, get_manager 
@@ -353,10 +355,71 @@ while im <= 100:
     im = im + 1
 
 # %% 
+
+def get_norm_spike_counts(Sess, bin_dur=0.05):
+    
+    ResDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
+    if sys.platform == 'win32':
+        SaveDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
+
+    if sys.platform == 'linux':
+        SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx_python/', Sess)
+
+    os.chdir(ResDir)
+
+    f = NWBHDF5IO((Sess + '.nwb'), 'r')
+    data_nwb = f.read()
+    data_hdf = h5py.File((Sess + '_trials.hdf5'), 'r')
+    
+
+    dur = max(data_nwb.trials[:]['stop_time']) - min(data_nwb.trials[:]['start_time'])
+    n_bins = int(dur/bin_dur)
+    bins_vec = np.linspace(min(data_nwb.trials[:]['start_time']), max(data_nwb.trials[:]['stop_time']), num = n_bins)
+    
+    spike_counts = np.zeros((len(data_hdf.keys()), n_bins-1))
+    
+    unit_order = []
+    index = 0
+    for un in data_hdf:
+        counts, bin_edges = np.histogram(data_hdf[un]['spike_times'][:], bins=bins_vec)
+        spike_counts[index, :] = counts
+        unit_order.append(un)
+        
+        index = index+1
+    
+    bins_vec = bins_vec[0:len(counts)]
+    tr_list = np.empty(len(bins_vec)) * np.nan
+    for tr in data_nwb.trials[:].index.values:
+        tr_list[(bins_vec >= data_nwb.trials[:].iloc[tr]['start_time']) & (bins_vec <= data_nwb.trials[:].iloc[tr]['stop_time'])] = tr
+        
+    spike_counts_norm = st.zscore(spike_counts, axis=None)
+    data_hdf.close()
+    f.close()
+    return spike_counts_norm, tr_list, unit_order
+
+
+    
+#    for i in range(len(unit_order)):
+#        grp_name = '/' + unit_order[i] + '/zscore_spike_counts_'+ str(bin_dur)
+#        grp = data_hdf.require_group(grp_name)
+#        grp.require_dataset(grp_name, data = spike_counts_norm[i, :], shape=(spike_counts_norm[i, :].shape), dtype=spike_counts_norm[i, :].dtype, exact=False)
+#        
+#        grp_name1 = '/' + unit_order[i] + '/spike_counts_'+ str(bin_dur)
+#        grp1 = data_hdf.create_group(grp_name1)
+#        grp1.create_dataset(grp_name, data = spike_counts[i, :]) 
+#        
+#        grp_name2 = '/' + unit_order[i] + '/trialnum_bins'
+#        grp2 = data_hdf.create_group(grp_name2)
+#        grp2.create_dataset(grp_name, data = tr_list) 
+#        
+        
+
+[spike_counts_norm, tr_list, unit_order] = get_norm_spike_counts(Sess) # 0.05s bin size by default
+    
+# %%
 # Quantify mean pupil size within each trial, then correlate it agains mean FR or variance
-
-from scipy import stats as st
-
+    
+# Normalize spike trains
 
 trials = data_nwb.trials[:][data_nwb.trials[:]['stimset'] == 'natural_images'.encode('utf8')]
 units_v1_sorted = data_nwb.units[:].sort_values(by = 'depth')[data_nwb.units[:]['location'] == 'V1']
@@ -371,7 +434,8 @@ for tr in trials.index.values:
     pupil_size = pupil_table['pupil_area'][(pupil_table['time'] >=  (trials.loc[tr]['start_time']+0.2)) & (pupil_table['time'] <=  trials.loc[tr]['stop_time'])]
     pupil_mean.append(np.mean(pupil_size))
     dif = np.diff(pupil_size)  
-    if sum(dif[dif> 0]) > abs(-4.951480042058392):
+    #if sum(dif[dif> 0]) > abs(-4.951480042058392):
+    if sum(dif[dif> 0]) > sum(abs(dif[dif< 0])):
         pupil_trend.append(1)
     else:
         pupil_trend.append(-1) 
@@ -421,7 +485,74 @@ plt.savefig('scatter')
 
 # %% 
 
-spikes = normalize_spike_trains(Sess, 0.05)
+spikes_norm = normalize_spike_trains_spont(Sess, 0.05)
+spikes_norm = spikes_norm[0]
+
+spikes_norm_nc = spikes_norm.T
+spikes_spont_norm = pd.DataFrame(data=spikes_norm_nc)
+
+pearsoncorr = spikes_spont_norm.corr(method='pearson')
+plt.subplots(figsize=(20,15))
+sb.heatmap(pearsoncorr, 
+            xticklabels=pearsoncorr.columns,
+            yticklabels=pearsoncorr.columns,
+            cmap='RdBu_r'
+            #annot=True,
+            )
+
+
+
+from sklearn.decomposition import PCA
+pca = PCA(n_components=2)
+principalComponents = pca.fit_transform(spikes)
+
+principalDf = pd.DataFrame(data = principalComponents
+             , columns = ['principal component 1', 'principal component 2'])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

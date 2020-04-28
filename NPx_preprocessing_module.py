@@ -13,6 +13,7 @@ import os
 import os.path
 import h5py 
 import scipy.io
+from scipy import stats as st
 import sys
 
 from datetime import datetime
@@ -465,8 +466,8 @@ def raster_spontaneous(Sess, dur, pupil):
     
     
     
-
-def normalize_spike_trains(Sess, binsize):
+    
+def normalize_spike_trains_spont(Sess, binsize):
     # binsize in sec: 0.05 s
     
     if sys.platform == 'win32':
@@ -493,26 +494,25 @@ def normalize_spike_trains(Sess, binsize):
         dur = data_nwb.trials[:].loc[ind]['stop_time'] - data_nwb.trials[:].loc[ind]['start_time']
         bins_n = int(dur/binsize)
         
-        spike_traces_norm = np.zeros((len(units_v1_sorted), bins_n))
+        spike_traces = np.zeros((len(units_v1_sorted), bins_n))
         index = 0
         for i in units_v1_sorted.index.values: #data_hdf.keys():
             un = str(i)
             spikes_tmp = data_hdf[un]['time_to_onset'][data_hdf[un]['trial_num'][:] == ind]
 
             counts, bin_edges = np.histogram(spikes_tmp, bins=bins_n)
-            
-            # z-score spike train
-            spike_traces_norm[index, :] = (counts - np.mean(counts))/ np.std(counts)
+            spike_traces[index, :] = counts
             index = index+1
             
+        # z-score the entire dataset with the same mean and std
+        spike_traces_norm = st.zscore(spike_traces, axis=None)
+        
         data_epochs.append(spike_traces_norm)    
         print('Finished spontaneous epoch', ind)
     
+    data_hdf.close()
+    f.close()
     return data_epochs
-    
-    
-    
-    
     
     
     

@@ -50,11 +50,7 @@ np.where(diff == val[1])
 
 camera_time_cont = camera_time[np.where(diff == val[0])[0][0]:np.where(diff == val[1])[0][0]]
 
-pupil_export = {'time': camera_time_cont[0:len(pupil_area)], 'pupil_area': pupil_area}
-pupil_area_df = pd.DataFrame(pupil_export, columns=['time', 'pupil_area'])
 
-name = Sess + '_pupil.csv'
-pupil_area_df.to_csv(name, index=False)
 # %%
 
 
@@ -95,5 +91,11 @@ pupil_area = np.pi * av_rad**2
 
 plt.plot(pupil_area)
 
+# %%
 
+pupil_export = {'time': camera_time_cont[0:len(pupil_area)], 'pupil_area': pupil_area}
+pupil_area_df = pd.DataFrame(pupil_export, columns=['time', 'pupil_area'])
+
+name = Sess + '_pupil.csv'
+pupil_area_df.to_csv(name, index=False)
 
