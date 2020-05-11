@@ -15,6 +15,7 @@ import h5py
 import scipy.io
 from scipy import stats as st
 import sys
+import time
 
 from datetime import datetime
 from dateutil.tz import tzlocal
@@ -53,17 +54,20 @@ def create_nwb_file(Sess, start_time):
     cluster_group = pd.read_csv(os.path.join(PathToUpload, "cluster_group.tsv"),  sep="\t")
     cluster_info = pd.read_csv(os.path.join(PathToUpload, "cluster_info.tsv"),  sep="\t")
     
+    if len(cluster_group) != len(cluster_info):
+        print('Cluster group (manual labeling) and claster info do not match!')
+        
     #excel_info = pd.read_excel((ExcelInfoPath + '\\Recordings_Marina_NPx.xlsx'), sheet_name=Sess)
     excel_info = pd.read_excel(os.path.join(ExcelInfoPath + '\\Recordings_Marina_NPx.xlsx'), sheet_name=Sess)
 
 
     # Select spikes from good clusters only
     # Have to add the depth of the clusters
-    good_clus = cluster_group[cluster_group['group'] == 'good']
-    good_clus_info = cluster_info[cluster_group['group'] == 'good']
-    print("Found", len(good_clus), ' good clusters') # has depth info
+    good_clus_info = cluster_info[cluster_info['group'] == 'good'] # has depth info
+    good_clus = good_clus_info[['id', 'group']]
+    print("Found", len(good_clus), ' good clusters') 
     
-    good_spikes_ind = [x in good_clus['cluster_id'].values for x in spike_clusters]
+    good_spikes_ind = [x in good_clus['id'].values for x in spike_clusters]
     spike_clus_good = spike_clusters[good_spikes_ind]
     spike_times_good = spike_times[good_spikes_ind]
     # spike_stamps_good = spike_stamps[good_spikes_ind]
@@ -307,8 +311,8 @@ def psth_per_unit_NatIm(Sess, bins):
     data_hdf = h5py.File((Sess + '_trials.hdf5'), 'r')
 
     nat_im_trials = data_nwb.trials[:].index.values[data_nwb.trials[:]['stimset'].values == ('natural_images').encode('utf8')]
-    nat_im = nat_im_trials[(data_nwb.trials[1:]['img_id'].values).astype(int) <= 900]
-    gray_im = nat_im_trials[(data_nwb.trials[1:]['img_id'].values).astype(int) > 900]
+    nat_im = nat_im_trials[(data_nwb.trials[nat_im_trials]['img_id'].values).astype(int) <= 900]
+    gray_im = nat_im_trials[(data_nwb.trials[nat_im_trials]['img_id'].values).astype(int) > 900]
     
     for key in data_hdf.keys():
         print('psth of unit', key)
@@ -382,7 +386,12 @@ def raster_spontaneous(Sess, dur, pupil):
     data_hdf = h5py.File((Sess + '_trials.hdf5'), 'r')
     
     spont_ind_trials = data_nwb.trials[:].index.values[data_nwb.trials[:]['stimset'].values == ('spontaneous_brightness').encode('utf8')]
-    pupil_area_rescaled = np.interp(pupil['pupil_area'], (pupil['pupil_area'].min(), pupil['pupil_area'].max()), (1, 100))
+    
+    # rescaling pupil area as a percentage of maximum pupil area
+    pupil_area_rescaled = np.interp(pupil['pupil_area'], (pupil['pupil_area'].min(), pupil['pupil_area'].max()), ((pupil['pupil_area'].min()*100)/pupil['pupil_area'].max(), 100))
+    
+    #pupil_area_rescaled = [(min(pupil['pupil_area']*100)/max(pupil['pupil_area']) for x in pupil['pupil_area'].values]
+
     
     for ind in spont_ind_trials:
         print(ind)
@@ -422,7 +431,7 @@ def raster_spontaneous(Sess, dur, pupil):
     
         while init <= total_dur:
             
-            fig = plt.figure(figsize=(18,10))
+            fig = plt.figure(figsize=(16,8))
             gs = gridspec.GridSpec(2,1, height_ratios=[2, 6], hspace = 0) 
             
             temp_pupil = pupil_area_rescaled[(pupil['time'] >= start+init) & (pupil['time'] <= start+init+step)]
@@ -431,8 +440,9 @@ def raster_spontaneous(Sess, dur, pupil):
             ax0 = plt.subplot(gs[0])
             ax0.plot(temp_time, temp_pupil, color = 'green', alpha = 0.75)
             ax0.set_xlim(start+init, start+init+step)
-            ax0.set_ylabel('Pupil area, pxls')
-            ax0.set_ylim(0, 75)
+            ax0.set_ylabel('Pupil area, %', fontsize=18)
+            ax0.set_ylim(0, 100)
+            ax0.tick_params(axis='y', which='major', labelsize=18)
             
             # raster plot
             temp_raster = []
@@ -442,14 +452,15 @@ def raster_spontaneous(Sess, dur, pupil):
             ax1 = plt.subplot(gs[1])
             ax1.eventplot(temp_raster, colors = col_list)
             lines = [Line2D([0], [0], color=c, linewidth=3, linestyle='-') for c in col]
-            ax1.legend(lines, list(areas))
+            ax1.legend(lines, list(areas), fontsize = 20)
             ax1.set_xlim(start+init, start+init+step)
-            ax1.set_ylabel('Neuron')
-            ax1.set_xlabel('Time, sec')
+            ax1.set_ylabel('Neuron', fontsize=18)
+            ax1.set_xlabel('Time, sec', fontsize=18)
+            ax1.tick_params(axis='both', which='major', labelsize=18)
 
             ax0.label_outer()
             
-            folder = 'rasters_spontaneous'
+            folder = 'rasters_spontaneous' + str(ind)
             if not os.path.exists(folder):
                 os.makedirs(folder)
         
@@ -467,7 +478,7 @@ def raster_spontaneous(Sess, dur, pupil):
     
     
     
-def normalize_spike_trains_spont(Sess, binsize):
+def get_norm_spike_counts_spont(Sess, binsize=0.05):
     # binsize in sec: 0.05 s
     
     if sys.platform == 'win32':
@@ -493,19 +504,22 @@ def normalize_spike_trains_spont(Sess, binsize):
         # Calculate the duration of spont epoch to get the number of bins for spike counts
         dur = data_nwb.trials[:].loc[ind]['stop_time'] - data_nwb.trials[:].loc[ind]['start_time']
         bins_n = int(dur/binsize)
+        bins_vec = np.linspace(data_nwb.trials[:].loc[ind]['start_time'], data_nwb.trials[:].loc[ind]['stop_time'], num = bins_n)
         
-        spike_traces = np.zeros((len(units_v1_sorted), bins_n))
+        spike_traces = np.zeros((len(units_v1_sorted), bins_n-1))
+        
         index = 0
         for i in units_v1_sorted.index.values: #data_hdf.keys():
             un = str(i)
-            spikes_tmp = data_hdf[un]['time_to_onset'][data_hdf[un]['trial_num'][:] == ind]
+            spikes_tmp = data_hdf[un]['spike_times'][data_hdf[un]['trial_num'][:] == ind]
 
-            counts, bin_edges = np.histogram(spikes_tmp, bins=bins_n)
+            counts, bin_edges = np.histogram(spikes_tmp, bins=bins_vec)
             spike_traces[index, :] = counts
+            
             index = index+1
             
         # z-score the entire dataset with the same mean and std
-        spike_traces_norm = st.zscore(spike_traces, axis=None)
+        spike_traces_norm = st.zscore(spike_traces, axis=1)
         
         data_epochs.append(spike_traces_norm)    
         print('Finished spontaneous epoch', ind)
@@ -515,7 +529,88 @@ def normalize_spike_trains_spont(Sess, binsize):
     return data_epochs
     
     
+def get_norm_spike_counts(Sess, bin_dur=0.200):
+    # for now it is only for V1 units
     
+    ResDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
+    if sys.platform == 'win32':
+        SaveDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
+
+    if sys.platform == 'linux':
+        SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx_python/', Sess)
+
+    os.chdir(ResDir)
+
+    f = NWBHDF5IO((Sess + '.nwb'), 'r')
+    data_nwb = f.read()
+    data_hdf = h5py.File((Sess + '_trials.hdf5'), 'r')
+    
+    print('Bin size is', bin_dur, 'sec')
+    
+    units_v1_sorted = data_nwb.units[:].sort_values(by = 'depth')[data_nwb.units[:]['location'] == 'V1']    
+    
+    nat_im_trials = data_nwb.trials[:][data_nwb.trials[:]['stimset'].values == ('natural_images').encode('utf8')]
+    num_evoked = int(1/bin_dur) * len(nat_im_trials)
+    bin_edges_evoked = np.linspace(-0.2, 0.8, int(1/bin_dur)+1)
+
+    spont_trials = data_nwb.trials[:][data_nwb.trials[:]['stimset'].values == ('spontaneous_brightness').encode('utf8')]
+    num_spont = 0
+    spont_dur = 0 
+    for i in spont_trials.index.values:
+        dur = spont_trials.loc[i]['stop_time'] - spont_trials.loc[i]['start_time']
+        num_bins = int(dur/bin_dur)
+        spont_dur = spont_dur + dur
+        num_spont = num_spont + num_bins
+        
+        
+    start = time.time()
+    spike_counts = np.zeros((len(units_v1_sorted), num_evoked + num_spont))
+    tr_list = np.empty(num_evoked + num_spont) * np.nan
+   
+    tr_cursor = 0
+    for tr in data_nwb.trials[:].index.values:
+        if data_nwb.trials[:].loc[tr]['stimset'] == ('natural_images').encode('utf8'):
+            un_count = 0
+            for un in units_v1_sorted.index.values:
+                dat_tmp = data_hdf[str(un)]['time_to_onset'][:][data_hdf[str(un)]['trial_num'][:] == tr]
+                counts, bin_edges = np.histogram(dat_tmp, bins=bin_edges_evoked)
+                
+                spike_counts[un_count, tr_cursor: (tr_cursor + int(1/bin_dur))] = counts
+                tr_list[tr_cursor: (tr_cursor + int(1/bin_dur))] = tr
+                
+                un_count = un_count + 1
+            tr_cursor = tr_cursor + int(1/bin_dur)
+            
+        if data_nwb.trials[:].loc[tr]['stimset'] == ('spontaneous_brightness').encode('utf8'):
+            un_count = 0
+            for un in units_v1_sorted.index.values:
+                dat_tmp = data_hdf[str(un)]['spike_times'][:][data_hdf[str(un)]['trial_num'][:] == tr]
+                
+                dur = spont_trials.loc[tr]['stop_time'] - spont_trials.loc[tr]['start_time']
+                
+                bin_edges_spont = np.linspace(spont_trials.loc[tr]['start_time'], spont_trials.loc[tr]['stop_time'], int(dur/bin_dur)+1)
+                
+                counts, bin_edges = np.histogram(dat_tmp, bins=bin_edges_spont)
+                
+                spike_counts[un_count, tr_cursor: (tr_cursor + int(dur/bin_dur)) ] = counts
+                tr_list[tr_cursor: (tr_cursor + int(dur/bin_dur))] = tr
+                
+                un_count = un_count + 1
+            tr_cursor = tr_cursor + int(dur/bin_dur)
+            
+        if tr%100 == 0:
+            print('trials processed:', tr, '/', len(data_nwb.trials[:].index.values))
+                
+    end = time.time()
+    print('time elapsed:' , end - start)
+    
+    spike_counts_norm = st.zscore(spike_counts, axis=1)
+    
+    unit_order = units_v1_sorted.index.values
+    
+    data_hdf.close()
+    f.close()
+    return spike_counts_norm, tr_list, unit_order    
     
     
     
