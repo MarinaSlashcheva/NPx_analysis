@@ -39,13 +39,17 @@ def create_nwb_file(Sess, start_time):
         PathToUpload =  os.path.join(RawDataDir , Sess)
     
     if sys.platform == 'linux':
-        SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx_python/', Sess)
+        SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx/Results', Sess)
         RawDataDir = '/mnt/gs/projects/OWVinckNatIm/NPx_recordings/'
         PAthToAnalyzed = '/experiment1/recording1/continuous/Neuropix-PXI-100.0/'
         MatlabOutput = '/mnt/gs/projects/OWVinckNatIm/NPx_processed/Lev0_condInfo/'
         ExcelInfoPath = '/mnt/gs/departmentN4/Marina/'
           
         PathToUpload = RawDataDir + Sess + PAthToAnalyzed
+        
+        if not os.path.exists(SaveDir):
+            os.makedirs(SaveDir)
+        os.chdir(SaveDir)
     
     # Upload all the data
     spike_stamps = np.load(os.path.join(PathToUpload, "spike_times.npy"))
@@ -58,7 +62,7 @@ def create_nwb_file(Sess, start_time):
         print('Cluster group (manual labeling) and claster info do not match!')
         
     #excel_info = pd.read_excel((ExcelInfoPath + '\\Recordings_Marina_NPx.xlsx'), sheet_name=Sess)
-    excel_info = pd.read_excel(os.path.join(ExcelInfoPath + '\\Recordings_Marina_NPx.xlsx'), sheet_name=Sess)
+    excel_info = pd.read_excel(os.path.join(ExcelInfoPath + 'Recordings_Marina_NPx.xlsx'), sheet_name=Sess)
 
 
     # Select spikes from good clusters only
@@ -72,10 +76,13 @@ def create_nwb_file(Sess, start_time):
     spike_times_good = spike_times[good_spikes_ind]
     # spike_stamps_good = spike_stamps[good_spikes_ind]
     
-    good_clus_info['area'] = good_clus_info['depth'] > np.max(good_clus_info['depth']) - 1000
-    good_clus_info['area'] = good_clus_info['area'].replace(True, 'V1')
-    good_clus_info['area'] = good_clus_info['area'].replace(False, 'HPC')
-    
+    if excel_info['Area'][0] == 'V1':
+        good_clus_info['area'] = 'V1'
+    else:
+        good_clus_info['area'] = good_clus_info['depth'] > np.max(good_clus_info['depth']) - 1000
+        good_clus_info['area'] = good_clus_info['area'].replace(True, 'V1')
+        good_clus_info['area'] = good_clus_info['area'].replace(False, 'HPC')
+        
     del spike_clusters, spike_times, spike_stamps, good_spikes_ind
     
     
@@ -127,6 +134,14 @@ def create_nwb_file(Sess, start_time):
             cond[stim].img_order = img_order
             cond[stim].img_name = cond[stim].conf[0][0][0][10][0] # currently not used but might be needed later
 
+        # sorting out digitals for drifting gratings
+        if SC_stim_labels_present[stim][0] == 'drifting_gratings':
+            cond[stim].time = mat['StimClass'][0][0][3][0, SC_stim_present[stim]][0][0][0][2]
+            cond[stim].timestamps =  mat['StimClass'][0][0][3][0, SC_stim_present[stim]][0][0][0][3]
+            dg_orient = []
+            for i in range(len(cond[stim].stiminfo)):
+                dg_orient.append(int(cond[stim].stiminfo[i][2]))
+            cond[stim].dg_orient = dg_orient
     
     # Now create NWB file
     start_time = start_time # datetime(2020, 2, 27, 14, 36, 7, tzinfo=tzlocal())
@@ -181,7 +196,10 @@ def create_nwb_file(Sess, start_time):
         
         if cond[ep].name == 'natural_images':
             nwbfile.add_epoch(cond[ep].time[0][0], cond[ep].time[-1][1], cond[ep].name)
-    
+
+        if cond[ep].name == 'drifting_gratings':
+            nwbfile.add_epoch(cond[ep].time[0][0], cond[ep].time[-1][1], cond[ep].name)
+            
     # Add trials
     # Images names can be also added here
     nwbfile.add_trial_column(name='start', description='start time relative to the stimulus onset')
@@ -210,6 +228,12 @@ def create_nwb_file(Sess, start_time):
                                   stimset = (cond[ep].name).encode('utf8'), 
                                   img_id = (str(cond[ep].img_order[tr])).encode('utf8'))
     
+        if cond[ep].name == 'drifting_gratings':
+            for tr in range(len(cond[ep].time)):
+                nwbfile.add_trial(start_time = cond[ep].time[tr][0], stop_time = cond[ep].time[tr][1],
+                                  start = cond[ep].time[tr][2],
+                                  stimset = (cond[ep].name).encode('utf8'), 
+                                  img_id = (str(cond[ep].dg_orient[tr])).encode('utf8'))
     
     # Write NWB file
     os.chdir(SaveDir)
@@ -234,7 +258,7 @@ def create_hdf5_file(Sess):
         SaveDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
 
     if sys.platform == 'linux':
-        SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx_python/', Sess)
+        SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx/Results', Sess)
 
     os.chdir(SaveDir)
     f = NWBHDF5IO((Sess + '.nwb'), 'r')
@@ -297,13 +321,15 @@ def FR_barplot(nwbfile):
 
 def psth_per_unit_NatIm(Sess, bins):
 # Creating PSTH (simple histogram)
-    ResDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
+    
     if sys.platform == 'win32':
         SaveDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
+        ResDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
 
     if sys.platform == 'linux':
-        SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx_python/', Sess)
-
+        SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx/Results', Sess)
+        ResDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx/Results', Sess)
+        
     os.chdir(ResDir)
 
     f = NWBHDF5IO((Sess + '.nwb'), 'r')
@@ -377,7 +403,7 @@ def raster_spontaneous(Sess, dur, pupil):
         SaveDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
 
     if sys.platform == 'linux':
-        SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx_python/', Sess)
+        SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx/Results', Sess)
 
     os.chdir(SaveDir)
 
@@ -485,7 +511,7 @@ def get_norm_spike_counts_spont(Sess, binsize=0.05):
         SaveDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
 
     if sys.platform == 'linux':
-        SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx_python/', Sess)
+        SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx/Results', Sess)
 
     os.chdir(SaveDir)
 
@@ -537,7 +563,7 @@ def get_norm_spike_counts(Sess, bin_dur=0.200):
         SaveDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
 
     if sys.platform == 'linux':
-        SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx_python/', Sess)
+        SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx/Results', Sess)
 
     os.chdir(ResDir)
 

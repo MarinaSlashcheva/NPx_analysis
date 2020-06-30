@@ -268,3 +268,58 @@ sb_plot = sb.heatmap(pearsoncorr,  #pupil_mean < np.mean(pupil_mean)
 
 fig = sb_plot.get_figure()
 fig.savefig('NC_aroused_trials_1s_spearman.png')
+
+
+# %% Last version of noise correlation per 4 repetitions - does not seem very different from using all images
+
+# Quantify mean pupil size within each trial, then correlate it agains mean FR or variance
+    
+# Normalize spike trains
+bin_dur = 1
+[spike_counts_norm, tr_list, unit_order] = get_norm_spike_counts(Sess, bin_dur = bin_dur) # 0.05s bin size by default
+#pupil_area_rescaled = np.interp(pupil_table['pupil_area'], (pupil_table['pupil_area'].min(), pupil_table['pupil_area'].max()), 
+#                                ((pupil_table['pupil_area'].min()*100)/pupil_table['pupil_area'].max(), 100))
+
+
+trials = data_nwb.trials[:][data_nwb.trials[:]['stimset'] == 'natural_images'.encode('utf8')]
+units_v1_sorted = data_nwb.units[:].sort_values(by = 'depth')[data_nwb.units[:]['location'] == 'V1']
+
+def partition(array):
+  return {i: (array == i).nonzero()[0] for i in np.unique(array)}
+
+unique_val = partition(trials['img_id'].values)
+
+spike_counts_natim = spike_counts_norm[:, [x in trials.index.values for x in tr_list]]
+tr_list_natim = tr_list[[x in trials.index.values for x in tr_list]]
+
+noisecorr = np.zeros(shape=(len(unit_order), len(unit_order), 900))
+
+count = 0
+for im in unique_val.keys():
+    if int(im) > 900:
+        continue
+    
+    same_im = spike_counts_natim[:, unique_val[im]].T
+    same_im = pd.DataFrame(data=same_im) # check this carefylly!!! take bins only after stim ON
+
+    pearsoncorr = same_im.corr(method='spearman')
+    noisecorr[:, :, count] = pearsoncorr    
+    
+    
+    count = count + 1
+    
+    
+average_noisecorr = np.nanmean(noisecorr, axis=2)
+
+plt.subplots(figsize=(12,10))
+sb_plot = sb.heatmap(average_noisecorr,  #pupil_mean < np.mean(pupil_mean)
+           vmin=-1, vmax=1,
+           xticklabels=pearsoncorr.columns,
+           yticklabels=pearsoncorr.columns,
+           cmap='RdBu_r'
+           #annot=True,
+           )
+
+fig = sb_plot.get_figure()
+fig.savefig('NC_per4rep_av_1s_spearman.png')
+

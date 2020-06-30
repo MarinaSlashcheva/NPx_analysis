@@ -22,7 +22,7 @@ from itertools import chain
 from random import randint
 
 sys.path.append(r'C:\Users\slashchevam\Desktop\NPx\NPx_analysis')
-sys.path.append('/mnt/pns/departmentN4/Marina/NPx_python/NPx_analysis')
+sys.path.append('/mnt/pns/departmentN4/Marina/NPx/NPx_analysis')
 from NPx_preprocessing_module import *
 
 # %%
@@ -32,8 +32,21 @@ Sess = 'Bl6_177_2020-02-27_14-36-07'
 Sess = 'Bl6_177_2020-02-29_17-12-05'
 Sess = 'Bl6_177_2020-03-01_14-49-02'
 
+Sess = 'Bl6_196_2020-05-12_18-56-36'
+Sess = 'Bl6_196_2020-05-13_14-32-21'
+Sess = 'Bl6_196_2020-05-14_17-28-07'
+Sess = 'Bl6_196_2020-05-15_12-57-52'
 
-pupil_folder = 'C:\\Users\\slashchevam\\Desktop\\NPx\\videos'
+Sess = 'Bl6_188_2020-06-03_14-48-44'
+Sess = 'Bl6_188_2020-06-04_15-41-41'
+Sess = 'Bl6_188_2020-06-05_13-48-10' # hdf5
+
+Sess = 'Bl6_191_2020-06-09_16-01-37' # hdf5
+Sess = 'Bl6_191_2020-06-10_11-55-36' # hdf5
+Sess = 'Bl6_191_2020-06-11_17-22-50' #
+Sess = 'Bl6_191_2020-06-12_12-11-46' #
+
+pupil_folder = '/mnt/hpx/projects/OWVinckNatIm/Recordings/Camera/'
 os.chdir(pupil_folder)
 
 pupil_name = Sess + '_pupil.csv'
@@ -44,7 +57,7 @@ if sys.platform == 'win32':
     SaveDir = os.path.join(r'C:\Users\slashchevam\Desktop\NPx\Results', Sess)
 
 if sys.platform == 'linux':
-    SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx_python/', Sess)
+    SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx/Results', Sess)
     
 if not os.path.exists(SaveDir):
     os.makedirs(SaveDir)
@@ -54,22 +67,35 @@ os.chdir(SaveDir)
 # Create new NWB and HDF5 files, if they do not exist yet
 # Creating hdf5 takes some time!!! 
 
-#start_time = datetime(2020, 3, 1, 14, 49, 2, tzinfo=tzlocal())
-#create_nwb_file(Sess, start_time)
-#
-#create_hdf5_file(Sess)
+start_time = datetime(2020, 6, 11, 17, 22, 50, tzinfo=tzlocal())
+create_nwb_file(Sess, start_time)
+create_hdf5_file(Sess)
+
+psth_per_unit_NatIm(Sess, 50)
 
 # Upload NWB and HDF5 files
 f = NWBHDF5IO((Sess + '.nwb'), 'r')
 data_nwb = f.read()
-
 data_hdf = h5py.File((Sess + '_trials.hdf5'), 'r')
 
+data_nwb.trials[:][data_nwb.trials[:]['stimset'] == b'spontaneous_brightness']
 
 # Close files
 #data_hdf.close()
 #f.close()
 
+
+count = 1
+for S in ['Bl6_188_2020-06-05_13-48-10', 'Bl6_191_2020-06-09_16-01-37', 'Bl6_191_2020-06-10_11-55-36',
+          'Bl6_191_2020-06-11_17-22-50', 'Bl6_191_2020-06-12_12-11-46']:
+    print(S)
+    SaveDir = os.path.join('/mnt/gs/departmentN4/Marina/NPx/Results', S)
+    os.chdir(SaveDir)
+    create_hdf5_file(S)
+    psth_per_unit_NatIm(S, 50)
+    print(count, 'session completed')
+    count = count + 1
+    
 # %%
 # Add proper path for that! 
 psth_per_unit_NatIm(Sess, 50) # session title and bin number
@@ -433,117 +459,6 @@ while im <= 100:
       
 
 [spike_counts_norm, tr_list, unit_order] = get_norm_spike_counts(Sess, bin_dur = 0.05) # 0.05s bin size by default
-    
-# %%
-# Quantify mean pupil size within each trial, then correlate it agains mean FR or variance
-    
-# Normalize spike trains
-bin_dur = 1
-[spike_counts_norm, tr_list, unit_order] = get_norm_spike_counts(Sess, bin_dur = bin_dur) # 0.05s bin size by default
-#pupil_area_rescaled = np.interp(pupil_table['pupil_area'], (pupil_table['pupil_area'].min(), pupil_table['pupil_area'].max()), 
-#                                ((pupil_table['pupil_area'].min()*100)/pupil_table['pupil_area'].max(), 100))
-
-
-trials = data_nwb.trials[:][data_nwb.trials[:]['stimset'] == 'natural_images'.encode('utf8')]
-units_v1_sorted = data_nwb.units[:].sort_values(by = 'depth')[data_nwb.units[:]['location'] == 'V1']
-
-def partition(array):
-  return {i: (array == i).nonzero()[0] for i in np.unique(array)}
-
-unique_val = partition(trials['img_id'].values)
-
-spike_counts_natim = spike_counts_norm[:, [x in trials.index.values for x in tr_list]]
-tr_list_natim = tr_list[[x in trials.index.values for x in tr_list]]
-
-noisecorr = np.zeros(shape=(len(unit_order), len(unit_order), 900))
-
-count = 0
-for im in unique_val.keys():
-    if int(im) > 900:
-        continue
-    
-    same_im = spike_counts_natim[:, unique_val[im]].T
-    same_im = pd.DataFrame(data=same_im) # check this carefylly!!! take bins only after stim ON
-
-    pearsoncorr = same_im.corr(method='spearman')
-    noisecorr[:, :, count] = pearsoncorr    
-    
-    
-    count = count + 1
-    
-    
-average_noisecorr = np.nanmean(noisecorr, axis=2)
-
-plt.subplots(figsize=(12,10))
-sb_plot = sb.heatmap(average_noisecorr,  #pupil_mean < np.mean(pupil_mean)
-           vmin=-1, vmax=1,
-           xticklabels=pearsoncorr.columns,
-           yticklabels=pearsoncorr.columns,
-           cmap='RdBu_r'
-           #annot=True,
-           )
-
-fig = sb_plot.get_figure()
-fig.savefig('NC_per4rep_av_1s_spearman.png')
-
-#
-#
-#pupil_mean = []
-#pupil_trend = []
-#
-#for tr in trials.index.values:
-#    pupil_size = pupil_area_rescaled[(pupil_table['time'] >=  (trials.loc[tr]['start_time'])) & (pupil_table['time'] <=  trials.loc[tr]['stop_time'])]
-#    pupil_mean.append(np.mean(pupil_size))
-#    dif = np.diff(pupil_size)  
-#    #if sum(dif[dif> 0]) > abs(-4.951480042058392):
-#    if sum(dif[dif> 0]) > sum(abs(dif[dif< 0])):
-#        pupil_trend.append(1)
-#    else:
-#        pupil_trend.append(-1) 
-#
-#pupil_trend = np.array(pupil_trend)
-#pupil_mean = np.array(pupil_mean)
-#
-#
-## Now separately for trials with different pupil sizes
-#
-## Pupil size more than average
-#spike_counts_natimT = spike_counts_natim[:, pupil_mean < np.mean(pupil_mean)].T
-#spike_counts_natimT = pd.DataFrame(data=spike_counts_natimT) 
-#
-#pearsoncorr = spike_counts_natimT.corr(method='spearman')
-#
-#plt.subplots(figsize=(12,10))
-#sb_plot = sb.heatmap(pearsoncorr,  #pupil_mean < np.mean(pupil_mean)
-#           vmin=-1, vmax=1,
-#           xticklabels=pearsoncorr.columns,
-#           yticklabels=pearsoncorr.columns,
-#           cmap='RdBu_r'
-#           #annot=True,
-#           )
-#
-#fig = sb_plot.get_figure()
-#fig.savefig('NC_still_trials_1s_spearman.png')
-#
-#
-## Pupil size less than average
-#spike_counts_natimT = spike_counts_natim[:, pupil_mean > np.mean(pupil_mean)].T
-#spike_counts_natimT = pd.DataFrame(data=spike_counts_natimT) 
-#
-#pearsoncorr = spike_counts_natimT.corr(method='spearman')
-#
-#plt.subplots(figsize=(12,10))
-#sb_plot = sb.heatmap(pearsoncorr,  #pupil_mean < np.mean(pupil_mean)
-#           vmin=-1, vmax=1,
-#           xticklabels=pearsoncorr.columns,
-#           yticklabels=pearsoncorr.columns,
-#           cmap='RdBu_r'
-#           #annot=True,
-#           )
-#
-#fig = sb_plot.get_figure()
-#fig.savefig('NC_aroused_trials_1s_spearman.png')
-#
 
 
 # %% 
